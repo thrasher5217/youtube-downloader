@@ -34,6 +34,26 @@ function withCookies(args) {
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Debug endpoint to check what's happening on the server
+app.get('/api/debug', (req, res) => {
+  const url = req.query.url || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+  const args = withCookies(['--list-formats', '--no-playlist', url]);
+
+  execFile('yt-dlp', ['--version'], { timeout: 5000 }, (err, version) => {
+    const ytdlpVersion = version ? version.trim() : 'NOT FOUND: ' + (err ? err.message : 'unknown');
+
+    execFile('yt-dlp', args, { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (err2, stdout2, stderr2) => {
+      res.json({
+        ytdlpVersion,
+        hasCookies,
+        cookiesFileExists: fs.existsSync(COOKIES_PATH),
+        formats: stdout2 || null,
+        error: stderr2 || (err2 ? err2.message : null)
+      });
+    });
+  });
+});
+
 // Get video info
 app.get('/api/info', (req, res) => {
   const url = req.query.url;
