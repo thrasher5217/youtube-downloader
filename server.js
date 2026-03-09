@@ -1,9 +1,35 @@
 const express = require('express');
 const { execFile, spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Write YouTube cookies from env variable to a temp file
+const COOKIES_PATH = path.join(os.tmpdir(), 'cookies.txt');
+
+function setupCookies() {
+  const cookieData = process.env.YT_COOKIES;
+  if (cookieData) {
+    fs.writeFileSync(COOKIES_PATH, cookieData, 'utf-8');
+    console.log('YouTube cookies loaded from environment variable');
+    return true;
+  }
+  console.log('No YT_COOKIES env variable found — running without cookies');
+  return false;
+}
+
+const hasCookies = setupCookies();
+
+// Build yt-dlp args with optional cookies
+function withCookies(args) {
+  if (hasCookies) {
+    return ['--cookies', COOKIES_PATH, ...args];
+  }
+  return args;
+}
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
@@ -13,17 +39,18 @@ app.get('/api/info', (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).json({ error: 'Missing url parameter' });
 
-  // Validate it looks like a YouTube URL
   if (!url.match(/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//)) {
     return res.status(400).json({ error: 'Invalid YouTube URL' });
   }
 
-  execFile('yt-dlp', [
+  const args = withCookies([
     '--dump-json',
     '--no-warnings',
     '--no-playlist',
     url
-  ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+  ]);
+
+  execFile('yt-dlp', args, { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
     if (err) {
       console.error('yt-dlp error:', stderr || err.message);
       return res.status(500).json({ error: 'Failed to fetch video info. Make sure yt-dlp is installed.' });
@@ -32,7 +59,6 @@ app.get('/api/info', (req, res) => {
     try {
       const data = JSON.parse(stdout);
 
-      // Build clean format list
       const formats = (data.formats || [])
         .filter(f => f.vcodec !== 'none' || f.acodec !== 'none')
         .map(f => ({
@@ -49,7 +75,6 @@ app.get('/api/info', (req, res) => {
           note: f.format_note || ''
         }));
 
-      // Group into: video+audio, video-only, audio-only
       const combined = formats.filter(f => f.hasVideo && f.hasAudio);
       const videoOnly = formats.filter(f => f.hasVideo && !f.hasAudio);
       const audioOnly = formats.filter(f => !f.hasVideo && f.hasAudio);
@@ -82,12 +107,10 @@ app.get('/api/download', (req, res) => {
     return res.status(400).json({ error: 'Invalid YouTube URL' });
   }
 
-  // Build a clean filename
   const safeTitle = (title || 'download').replace(/[^\w\s\-]/g, '').trim().substring(0, 100);
   const extension = (ext || 'mp4').replace(/[^\w]/g, '');
   const filename = `${safeTitle}.${extension}`;
 
-  // Map extensions to MIME types
   const mimeTypes = {
     mp4: 'video/mp4',
     webm: 'video/webm',
@@ -104,12 +127,14 @@ app.get('/api/download', (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Type', contentType);
 
-  const ytdlp = spawn('yt-dlp', [
+  const args = withCookies([
     '-f', formatId,
     '--no-playlist',
     '-o', '-',
     url
   ]);
+
+  const ytdlp = spawn('yt-dlp', args);
 
   ytdlp.stdout.pipe(res);
 
