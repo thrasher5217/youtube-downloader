@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Downloader</title>
+  <meta name="description" content="Download YouTube videos in any resolution and format">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+  <div class="bg-glow bg-glow-3"></div>
+
+  <main>
+    <header class="hero">
+      <div class="logo">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+      </div>
+      <h1>YouTube <span class="gradient-text">Downloader</span></h1>
+      <p class="subtitle">Paste a YouTube link. Pick your quality. Download instantly.</p>
+    </header>
+
+    <!-- URL Input -->
+    <section class="input-section glass-card">
+      <form id="url-form">
+        <div class="input-wrapper">
+          <input type="url" id="url-input" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off"
+            required />
+          <button type="submit" id="fetch-btn">
+            <span class="btn-text">Fetch</span>
+            <span class="btn-loader" hidden>
+              <span class="spinner"></span>
+            </span>
+          </button>
+        </div>
+      </form>
+      <p id="error-msg" class="error-msg" hidden></p>
+    </section>
+
+    <!-- Results -->
+    <section id="results" class="results" hidden>
+      <!-- Video Info Card -->
+      <div class="video-card glass-card" id="video-card">
+        <div class="video-thumb-wrap">
+          <img id="video-thumb" src="" alt="Video thumbnail">
+          <span class="video-duration" id="video-duration"></span>
+        </div>
+        <div class="video-meta">
+          <h2 id="video-title"></h2>
+          <div class="video-stats">
+            <span id="video-uploader"></span>
+            <span class="dot">·</span>
+            <span id="video-views"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Format Tabs -->
+      <div class="tabs glass-card">
+        <div class="tab-header">
+          <button class="tab-btn active" data-tab="combined">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="2" width="20" height="20" rx="2.18" />
+              <line x1="7" y1="2" x2="7" y2="22" />
+              <line x1="17" y1="2" x2="17" y2="22" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+            </svg>
+            Video + Audio
+          </button>
+          <button class="tab-btn" data-tab="videoOnly">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="23 7 16 12 23 17 23 7" />
+              <rect x="1" y="5" width="15" height="14" rx="2" />
+            </svg>
+            Video Only
+          </button>
+          <button class="tab-btn" data-tab="audioOnly">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 18V5l12-2v13" />
+              <circle cx="6" cy="18" r="3" />
+              <circle cx="18" cy="16" r="3" />
+            </svg>
+            Audio Only
+          </button>
+        </div>
+
+        <div class="tab-content" id="tab-content">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
