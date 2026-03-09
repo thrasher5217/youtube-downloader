@@ -128,7 +128,8 @@ app.get('/api/download', (req, res) => {
   res.setHeader('Content-Type', contentType);
 
   const args = withCookies([
-    '-f', `${formatId}/bestvideo+bestaudio/best`,
+    '-f', `${formatId}/best`,
+    '--no-check-formats',
     '--no-playlist',
     '-o', '-',
     url
