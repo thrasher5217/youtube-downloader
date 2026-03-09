@@ -47,10 +47,12 @@ app.get('/api/info', (req, res) => {
     '--dump-json',
     '--no-warnings',
     '--no-playlist',
+    '--no-check-formats',
+    '--ignore-errors',
     url
   ]);
 
-  execFile('yt-dlp', args, { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+  execFile('yt-dlp', args, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
     if (err) {
       console.error('yt-dlp error:', stderr || err.message);
       return res.status(500).json({ error: 'Failed to fetch video info. Make sure yt-dlp is installed.' });
@@ -130,6 +132,7 @@ app.get('/api/download', (req, res) => {
   const args = withCookies([
     '-f', `${formatId}/best`,
     '--no-check-formats',
+    '--ignore-errors',
     '--no-playlist',
     '-o', '-',
     url
