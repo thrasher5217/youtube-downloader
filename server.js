@@ -185,7 +185,7 @@ app.get('/api/download', (req, res) => {
 
 // ========== GIF Maker ==========
 app.get('/api/gif', (req, res) => {
-  const { url, start, duration } = req.query;
+  const { url, start, duration, compress } = req.query;
   if (!url || start == null || !duration) {
     return res.status(400).json({ error: 'Missing url, start, or duration parameter' });
   }
@@ -195,6 +195,9 @@ app.get('/api/gif', (req, res) => {
   }
 
   const dur = Math.min(Math.max(parseFloat(duration) || 3, 1), 30);
+  const compressed = compress === '1' || compress === 'true';
+  const gifWidth = compressed ? 320 : 480;
+  const gifFps = compressed ? 10 : 15;
   const id = crypto.randomBytes(8).toString('hex');
   const tmpDir = os.tmpdir();
   const videoPath = path.join(tmpDir, `ytgif_${id}.mp4`);
@@ -220,7 +223,7 @@ app.get('/api/gif', (req, res) => {
     url
   ]);
 
-  console.log(`[GIF] Downloading segment: start=${start}, duration=${dur}`);
+  console.log(`[GIF] Downloading segment: start=${start}, duration=${dur}, compressed=${compressed}`);
 
   const dlProc = spawn('yt-dlp', dlArgs);
   let dlStderr = '';
@@ -251,9 +254,13 @@ app.get('/api/gif', (req, res) => {
     console.log('[GIF] Download complete, generating palette...');
 
     // Step 2: Generate palette
+    const paletteFilter = compressed
+      ? `fps=${gifFps},scale=${gifWidth}:-1:flags=lanczos,palettegen=max_colors=64:stats_mode=diff`
+      : `fps=${gifFps},scale=${gifWidth}:-1:flags=lanczos,palettegen=stats_mode=diff`;
+
     const paletteArgs = [
       '-y', '-i', videoPath,
-      '-vf', 'fps=15,scale=480:-1:flags=lanczos,palettegen=stats_mode=diff',
+      '-vf', paletteFilter,
       palettePath
     ];
 
@@ -268,9 +275,13 @@ app.get('/api/gif', (req, res) => {
       console.log('[GIF] Palette done, rendering GIF...');
 
       // Step 3: Generate GIF using the palette
+      const gifFilter = compressed
+        ? `fps=${gifFps},scale=${gifWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle`
+        : `fps=${gifFps},scale=${gifWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`;
+
       const gifArgs = [
         '-y', '-i', videoPath, '-i', palettePath,
-        '-lavfi', 'fps=15,scale=480:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle',
+        '-lavfi', gifFilter,
         gifPath
       ];
 

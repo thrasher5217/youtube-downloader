@@ -145,6 +145,7 @@ gifForm.addEventListener('submit', async (e) => {
     const url = gifUrlInput.value.trim();
     const start = document.getElementById('gif-start').value;
     const duration = gifDurationSlider.value;
+    const compress = document.getElementById('gif-compress').checked;
 
     if (!url) return;
 
@@ -158,7 +159,7 @@ gifForm.addEventListener('submit', async (e) => {
             setGifLoading(true, 'Generating GIF...');
         }, 5000);
 
-        const resp = await fetch(`/api/gif?url=${encodeURIComponent(url)}&start=${encodeURIComponent(start)}&duration=${encodeURIComponent(duration)}`);
+        const resp = await fetch(`/api/gif?url=${encodeURIComponent(url)}&start=${encodeURIComponent(start)}&duration=${encodeURIComponent(duration)}&compress=${compress ? '1' : '0'}`);
 
         clearTimeout(progressTimer);
 
