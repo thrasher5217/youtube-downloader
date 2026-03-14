@@ -16,6 +16,21 @@ const tabContent = document.getElementById('tab-content');
 let currentData = null;
 let activeTab = 'combined';
 
+// ========== Tool Navigation ==========
+const toolNavBtns = document.querySelectorAll('.tool-nav-btn');
+const toolPanels = document.querySelectorAll('.tool-panel');
+
+toolNavBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        toolNavBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const tool = btn.dataset.tool;
+        toolPanels.forEach(p => {
+            p.hidden = p.id !== `tool-${tool}`;
+        });
+    });
+});
+
 // ========== Form Submit ==========
 urlForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -103,6 +118,88 @@ function renderFormats(formats) {
       </a>
     </div>
   `}).join('');
+}
+
+// ========== GIF Maker ==========
+const gifForm = document.getElementById('gif-form');
+const gifUrlInput = document.getElementById('gif-url-input');
+const gifBtn = document.getElementById('gif-btn');
+const gifBtnText = gifBtn.querySelector('.btn-text');
+const gifBtnLoader = gifBtn.querySelector('.btn-loader');
+const gifProgressText = gifBtn.querySelector('.gif-progress-text');
+const gifErrorMsg = document.getElementById('gif-error-msg');
+const gifResult = document.getElementById('gif-result');
+const gifPreview = document.getElementById('gif-preview');
+const gifDownloadBtn = document.getElementById('gif-download-btn');
+const gifSizeLabel = document.getElementById('gif-size');
+const gifDurationSlider = document.getElementById('gif-duration');
+const gifDurationValue = document.getElementById('gif-duration-value');
+
+// Duration slider live update
+gifDurationSlider.addEventListener('input', () => {
+    gifDurationValue.textContent = `${gifDurationSlider.value}s`;
+});
+
+gifForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const url = gifUrlInput.value.trim();
+    const start = document.getElementById('gif-start').value;
+    const duration = gifDurationSlider.value;
+
+    if (!url) return;
+
+    setGifLoading(true, 'Downloading video...');
+    hideGifError();
+    gifResult.hidden = true;
+
+    try {
+        // Update progress text after a delay
+        const progressTimer = setTimeout(() => {
+            setGifLoading(true, 'Generating GIF...');
+        }, 5000);
+
+        const resp = await fetch(`/api/gif?url=${encodeURIComponent(url)}&start=${encodeURIComponent(start)}&duration=${encodeURIComponent(duration)}`);
+
+        clearTimeout(progressTimer);
+
+        if (!resp.ok) {
+            let errMsg = 'GIF creation failed';
+            try {
+                const errData = await resp.json();
+                errMsg = errData.error || errMsg;
+            } catch (_) { }
+            throw new Error(errMsg);
+        }
+
+        const blob = await resp.blob();
+        const gifUrl = URL.createObjectURL(blob);
+
+        gifPreview.src = gifUrl;
+        gifDownloadBtn.href = gifUrl;
+        gifSizeLabel.textContent = formatSize(blob.size);
+        gifResult.hidden = false;
+        gifResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+        showGifError(err.message);
+    } finally {
+        setGifLoading(false);
+    }
+});
+
+function setGifLoading(loading, text) {
+    gifBtn.disabled = loading;
+    gifBtnText.hidden = loading;
+    gifBtnLoader.hidden = !loading;
+    if (text) gifProgressText.textContent = text;
+}
+
+function showGifError(msg) {
+    gifErrorMsg.textContent = msg;
+    gifErrorMsg.hidden = false;
+}
+
+function hideGifError() {
+    gifErrorMsg.hidden = true;
 }
 
 // ========== Helpers ==========

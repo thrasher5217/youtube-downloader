@@ -3,6 +3,7 @@ const { execFile, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,6 +35,17 @@ function withCookies(args) {
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Helper: check if a format's language is English or original
+function isEnglishOrOriginal(f) {
+  const lang = (f.language || '').toLowerCase();
+  // Keep formats with: no language set, English, or 'original' tag
+  if (!lang || lang === 'en' || lang === 'eng' || lang === 'en-us' || lang === 'en-gb') return true;
+  if (lang === 'original' || lang === 'und') return true;
+  // Also keep if the format_note or language_preference suggests original/default
+  if (f.language_preference != null && f.language_preference >= 0) return true;
+  return false;
+}
+
 // Get video info
 app.get('/api/info', (req, res) => {
   const url = req.query.url;
@@ -49,6 +61,7 @@ app.get('/api/info', (req, res) => {
     '--no-playlist',
     '--no-check-formats',
     '--ignore-errors',
+    '--extractor-args', 'youtube:lang=en',
     url
   ]);
 
@@ -62,7 +75,7 @@ app.get('/api/info', (req, res) => {
       const data = JSON.parse(stdout);
 
       const formats = (data.formats || [])
-        .filter(f => f.vcodec !== 'none' || f.acodec !== 'none')
+        .filter(f => (f.vcodec !== 'none' || f.acodec !== 'none') && isEnglishOrOriginal(f))
         .map(f => ({
           formatId: f.format_id,
           ext: f.ext,
@@ -74,7 +87,8 @@ app.get('/api/info', (req, res) => {
           hasVideo: f.vcodec !== 'none',
           hasAudio: f.acodec !== 'none',
           tbr: f.tbr || null,
-          note: f.format_note || ''
+          note: f.format_note || '',
+          language: f.language || null
         }));
 
       const combined = formats.filter(f => f.hasVideo && f.hasAudio);
@@ -129,11 +143,16 @@ app.get('/api/download', (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Type', contentType);
 
+  // Prefer: requested format with best English audio, then requested format with any best audio, then just the format
+  const formatStr = `${formatId}+ba[language=en]/${formatId}+ba/${formatId}/best`;
+
   const args = withCookies([
-    '-f', `${formatId}/best`,
+    '-f', formatStr,
     '--no-check-formats',
     '--ignore-errors',
     '--no-playlist',
+    '--extractor-args', 'youtube:lang=en',
+    '--audio-multistreams',
     '-o', '-',
     url
   ]);
@@ -161,6 +180,129 @@ app.get('/api/download', (req, res) => {
 
   req.on('close', () => {
     ytdlp.kill();
+  });
+});
+
+// ========== GIF Maker ==========
+app.get('/api/gif', (req, res) => {
+  const { url, start, duration } = req.query;
+  if (!url || start == null || !duration) {
+    return res.status(400).json({ error: 'Missing url, start, or duration parameter' });
+  }
+
+  if (!url.match(/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//)) {
+    return res.status(400).json({ error: 'Invalid YouTube URL' });
+  }
+
+  const dur = Math.min(Math.max(parseFloat(duration) || 3, 1), 30);
+  const id = crypto.randomBytes(8).toString('hex');
+  const tmpDir = os.tmpdir();
+  const videoPath = path.join(tmpDir, `ytgif_${id}.mp4`);
+  const palettePath = path.join(tmpDir, `ytgif_${id}_palette.png`);
+  const gifPath = path.join(tmpDir, `ytgif_${id}.gif`);
+
+  function cleanup() {
+    [videoPath, palettePath, gifPath].forEach(f => {
+      try { fs.unlinkSync(f); } catch (_) { }
+    });
+  }
+
+  // Step 1: Download the video segment with yt-dlp
+  const dlArgs = withCookies([
+    '-f', 'bv*[height<=720]+ba/b[height<=720]/bv*+ba/b',
+    '--no-playlist',
+    '--no-check-formats',
+    '--ignore-errors',
+    '--download-sections', `*${start}-${parseFloat(start) + dur}`,
+    '--force-keyframes-at-cuts',
+    '-o', videoPath,
+    '--merge-output-format', 'mp4',
+    url
+  ]);
+
+  console.log(`[GIF] Downloading segment: start=${start}, duration=${dur}`);
+
+  const dlProc = spawn('yt-dlp', dlArgs);
+  let dlStderr = '';
+
+  dlProc.stderr.on('data', d => { dlStderr += d.toString(); });
+
+  dlProc.on('error', err => {
+    console.error('[GIF] yt-dlp spawn error:', err);
+    cleanup();
+    if (!res.headersSent) res.status(500).json({ error: 'Failed to start download' });
+  });
+
+  dlProc.on('close', code => {
+    if (code !== 0) {
+      console.error('[GIF] yt-dlp failed:', dlStderr);
+      cleanup();
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to download video segment' });
+      return;
+    }
+
+    if (!fs.existsSync(videoPath)) {
+      console.error('[GIF] Downloaded file not found');
+      cleanup();
+      if (!res.headersSent) res.status(500).json({ error: 'Downloaded file not found' });
+      return;
+    }
+
+    console.log('[GIF] Download complete, generating palette...');
+
+    // Step 2: Generate palette
+    const paletteArgs = [
+      '-y', '-i', videoPath,
+      '-vf', 'fps=15,scale=480:-1:flags=lanczos,palettegen=stats_mode=diff',
+      palettePath
+    ];
+
+    execFile('ffmpeg', paletteArgs, { timeout: 30000 }, (err) => {
+      if (err) {
+        console.error('[GIF] Palette generation failed:', err.message);
+        cleanup();
+        if (!res.headersSent) res.status(500).json({ error: 'GIF palette generation failed' });
+        return;
+      }
+
+      console.log('[GIF] Palette done, rendering GIF...');
+
+      // Step 3: Generate GIF using the palette
+      const gifArgs = [
+        '-y', '-i', videoPath, '-i', palettePath,
+        '-lavfi', 'fps=15,scale=480:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle',
+        gifPath
+      ];
+
+      execFile('ffmpeg', gifArgs, { timeout: 120000, maxBuffer: 50 * 1024 * 1024 }, (err2) => {
+        if (err2) {
+          console.error('[GIF] GIF rendering failed:', err2.message);
+          cleanup();
+          if (!res.headersSent) res.status(500).json({ error: 'GIF rendering failed' });
+          return;
+        }
+
+        console.log('[GIF] GIF ready, streaming to client...');
+
+        const stat = fs.statSync(gifPath);
+        res.setHeader('Content-Type', 'image/gif');
+        res.setHeader('Content-Length', stat.size);
+        res.setHeader('Content-Disposition', 'attachment; filename="youtube.gif"');
+
+        const stream = fs.createReadStream(gifPath);
+        stream.pipe(res);
+        stream.on('end', cleanup);
+        stream.on('error', () => {
+          cleanup();
+          if (!res.headersSent) res.status(500).json({ error: 'Failed to send GIF' });
+        });
+      });
+    });
+  });
+
+  req.on('close', () => {
+    dlProc.kill();
+    cleanup();
   });
 });
 
