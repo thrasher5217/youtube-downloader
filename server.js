@@ -210,20 +210,19 @@ app.get('/api/gif', (req, res) => {
     });
   }
 
-  // Step 1: Download the video segment with yt-dlp
+  // Step 1: Download the video with yt-dlp (no --download-sections to avoid ffmpeg 403)
+  const startSec = parseFloat(start) || 0;
   const dlArgs = withCookies([
-    '-f', 'bv*[height<=720]+ba/b[height<=720]/bv*+ba/b',
+    '-f', 'bv*[height<=480]+ba/b[height<=480]/bv*+ba/b',
     '--no-playlist',
     '--no-check-formats',
     '--ignore-errors',
-    '--download-sections', `*${start}-${parseFloat(start) + dur}`,
-    '--force-keyframes-at-cuts',
     '-o', videoPath,
     '--merge-output-format', 'mp4',
     url
   ]);
 
-  console.log(`[GIF] Downloading segment: start=${start}, duration=${dur}, compressed=${compressed}`);
+  console.log(`[GIF] Downloading video: start=${startSec}, duration=${dur}, compressed=${compressed}`);
 
   const dlProc = spawn('yt-dlp', dlArgs);
   let dlStderr = '';
@@ -240,7 +239,7 @@ app.get('/api/gif', (req, res) => {
     if (code !== 0) {
       console.error('[GIF] yt-dlp failed:', dlStderr);
       cleanup();
-      if (!res.headersSent) res.status(500).json({ error: 'Failed to download video segment' });
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to download video' });
       return;
     }
 
@@ -253,13 +252,14 @@ app.get('/api/gif', (req, res) => {
 
     console.log('[GIF] Download complete, generating palette...');
 
-    // Step 2: Generate palette
+    // Step 2: Generate palette (with -ss/-t to trim to the desired segment)
     const paletteFilter = compressed
       ? `fps=${gifFps},scale=${gifWidth}:-1:flags=lanczos,palettegen=max_colors=64:stats_mode=diff`
       : `fps=${gifFps},scale=${gifWidth}:-1:flags=lanczos,palettegen=stats_mode=diff`;
 
     const paletteArgs = [
-      '-y', '-i', videoPath,
+      '-y', '-ss', String(startSec), '-t', String(dur),
+      '-i', videoPath,
       '-vf', paletteFilter,
       palettePath
     ];
@@ -274,13 +274,14 @@ app.get('/api/gif', (req, res) => {
 
       console.log('[GIF] Palette done, rendering GIF...');
 
-      // Step 3: Generate GIF using the palette
+      // Step 3: Generate GIF using the palette (with -ss/-t for the same segment)
       const gifFilter = compressed
         ? `fps=${gifFps},scale=${gifWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle`
         : `fps=${gifFps},scale=${gifWidth}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`;
 
       const gifArgs = [
-        '-y', '-i', videoPath, '-i', palettePath,
+        '-y', '-ss', String(startSec), '-t', String(dur),
+        '-i', videoPath, '-i', palettePath,
         '-lavfi', gifFilter,
         gifPath
       ];
