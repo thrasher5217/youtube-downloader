@@ -8,17 +8,26 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Write YouTube cookies from env variable to a temp file
-const COOKIES_PATH = path.join(os.tmpdir(), 'cookies.txt');
+// Load YouTube cookies: prefer local file, then env variable
+const LOCAL_COOKIES = path.join(__dirname, 'cookies.txt');
+const COOKIES_PATH = fs.existsSync(LOCAL_COOKIES)
+  ? LOCAL_COOKIES
+  : path.join(os.tmpdir(), 'cookies.txt');
 
 function setupCookies() {
+  // 1. Check for local cookies.txt in project directory
+  if (fs.existsSync(LOCAL_COOKIES)) {
+    console.log('YouTube cookies loaded from local cookies.txt');
+    return true;
+  }
+  // 2. Fall back to env variable
   const cookieData = process.env.YT_COOKIES;
   if (cookieData) {
     fs.writeFileSync(COOKIES_PATH, cookieData, 'utf-8');
     console.log('YouTube cookies loaded from environment variable');
     return true;
   }
-  console.log('No YT_COOKIES env variable found — running without cookies');
+  console.log('No cookies found — running without cookies (may get rate-limited)');
   return false;
 }
 
